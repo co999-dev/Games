@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>NEON GATE</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05060d; overflow: hidden; touch-action: none; }
+  body { display: flex; align-items: center; justify-content: center; font-family: "DejaVu Sans", system-ui, sans-serif; color: #fff; }
+  canvas { display: block; }
+  #msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+  #msg h1 { font-size: 56px; letter-spacing: 6px; margin: 0 0 12px; text-shadow: 0 0 24px #29e3ff, 0 0 48px #b44dff; }
+  #msg p { margin: 4px; opacity: .85; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="msg"><h1>NEON GATE</h1><p>← → oder Tippen/Ziehen</p><p>Leertaste oder Tippen zum Starten</p></div>
+<script src="game.js"></script>
+<script>
+  const { Game, W, H } = NeonGate;
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const msg = document.getElementById('msg');
+  let scale = 1, game = new Game(Date.now() & 0xffff), running = false, last = 0;
+  const keys = { left: false, right: false };
+  let touchX = null;
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const s = Math.min(innerWidth / W, innerHeight / H);
+    canvas.style.width = W * s + 'px';
+    canvas.style.height = H * s + 'px';
+    canvas.width = Math.round(W * s * dpr);
+    canvas.height = Math.round(H * s * dpr);
+    scale = s * dpr;
+  }
+  addEventListener('resize', resize); resize();
+
+  function start() {
+    game = new Game(Date.now() & 0xffff);
+    running = true;
+    msg.style.display = 'none';
+  }
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+    if ((e.key === ' ' || e.key === 'Enter') && (!running || !game.player.alive)) start();
+  });
+  addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+  });
+  function toGameX(clientX) { const r = canvas.getBoundingClientRect(); return (clientX - r.left) / r.width * W; }
+  canvas.addEventListener('pointerdown', e => { if (!running || (!game.player.alive && game.deadTime > 0.6)) start(); touchX = toGameX(e.clientX); });
+  addEventListener('pointermove', e => { if (touchX !== null) touchX = toGameX(e.clientX); });
+  addEventListener('pointerup', () => { touchX = null; });
+
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000 || 0);
+    last = now;
+    let input;
+    if (!running) input = game.botInput();          // Demo im Hintergrund
+    else if (touchX !== null) input = { targetX: touchX };
+    else input = { dir: (keys.right ? 1 : 0) - (keys.left ? 1 : 0) };
+    game.update(dt, input);
+    if (!running && !game.player.alive && game.deadTime > 1.5) game = new Game(Date.now() & 0xffff);
+    game.render(ctx, scale);
+    if (running) game.renderHUD(ctx, scale);
+    if (running && !game.player.alive && game.deadTime > 0.6) {
+      msg.style.display = 'flex';
+      msg.innerHTML = `<h1>GAME OVER</h1><p>Punkte: ${game.score} · beste Combo: x${game.bestCombo}</p><p>Leertaste oder Tippen für neue Runde</p>`;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

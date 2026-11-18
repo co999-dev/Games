@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>NEON GATE – Trailer</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="game.js"></script>
+<script>
+// Deterministischer Trailer-Renderer: window.renderFrame(i) zeichnet Bild i (30 fps).
+const { Game, W, H, clamp, lerp } = NeonGate;
+const FPS = 30, DURATION = 24, SCALE = 2;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const FONT = '"DejaVu Sans", system-ui, sans-serif';
+
+const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeBack = t => { t = clamp(t, 0, 1); const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+
+const game = new Game(42);
+// Vorlauf, damit gleich Tore im Bild sind
+for (let i = 0; i < 75; i++) game.update(1 / FPS, game.botInput());
+game.score = 0; game.combo = 0; game.bestCombo = 0; game.t = 0;
+let crashed = false;
+
+const CAPTIONS = [
+  { a: 3.3, b: 7.8, top: 'Gleite durch', main: 'DIE LÜCKEN' },
+  { a: 8.0, b: 12.8, top: 'Sammle Sterne', main: 'BAU COMBOS' },
+  { a: 13.0, b: 18.6, top: 'Es wird', main: 'SCHNELLER' },
+  { a: 19.3, b: 21.0, top: 'Wie weit', main: 'KOMMST DU?' },
+];
+
+function glowText(text, x, y, size, color, glow, alpha = 1, spacing = 0) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `bold ${size}px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (spacing) ctx.letterSpacing = spacing + 'px';
+  ctx.shadowColor = glow;
+  for (const b of [40, 18]) { ctx.shadowBlur = b; ctx.fillStyle = color; ctx.fillText(text, x, y); }
+  ctx.shadowBlur = 0; ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+function drawLogo(cx, cy, k, t) {
+  // k: Einblend-Fortschritt 0..1
+  const s = lerp(1.22, 1, easeBack(k));
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  const flicker = k < 1 ? (Math.sin(t * 90) > 0.2 ? 1 : 0.55) : 1;
+  glowText('NEON', 0, -52, 108, '#eafcff', '#29e3ff', ease(k) * flicker, 18);
+  glowText('GATE', 0, 64, 108, '#ffe9ff', '#d14dff', ease(k * 1.2 - 0.2) * flicker, 18);
+  // Linie
+  ctx.globalAlpha = ease(k * 1.4 - 0.4);
+  const lw = 380 * ease(k * 1.4 - 0.4);
+  const g = ctx.createLinearGradient(-lw / 2, 0, lw / 2, 0);
+  g.addColorStop(0, 'rgba(41,227,255,0)'); g.addColorStop(0.5, '#fff'); g.addColorStop(1, 'rgba(209,77,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(-lw / 2, 4, lw, 3);
+  ctx.restore();
+}
+
+function drawCaption(c, t) {
+  const kin = (t - c.a) / 0.35, kout = (c.b - t) / 0.3;
+  const k = Math.min(ease(kin), ease(kout));
+  if (k <= 0) return;
+  const y = 230;
+  const slide = (1 - ease(kin)) * -60;
+  ctx.save();
+  // Band
+  ctx.globalAlpha = k * 0.55;
+  ctx.fillStyle = '#05060d';
+  ctx.fillRect(0, y - 92, W, 170 * k);
+  ctx.restore();
+  glowText(c.top.toUpperCase(), W / 2 + slide, y - 42, 30, '#ffffff', '#29e3ff', k, 6);
+  const pulse = 1 + Math.max(0, 1 - (t - c.a) * 3) * 0.15;
+  ctx.save(); ctx.translate(W / 2 - slide, y + 22); ctx.scale(pulse, pulse);
+  glowText(c.main, 0, 0, 62, '#ffffff', c.main === 'SCHNELLER' ? '#ff3d6e' : '#d14dff', k, 4);
+  ctx.restore();
+}
+
+function speedLines(t, k) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 26; i++) {
+    const x = (i * 97.3) % W;
+    const y = ((t * 2400 + i * 311) % (H + 400)) - 200;
+    ctx.fillStyle = `rgba(255,255,255,${0.08 * k})`;
+    ctx.fillRect(x, y, 2, 160);
+  }
+  ctx.restore();
+}
+
+window.renderFrame = function (i) {
+  const t = i / FPS;
+  const dt = 1 / FPS;
+
+  // Tempo-Phase
+  game.speedBoost = t > 13 ? lerp(1, 1.55, ease((t - 13) / 2)) : 1;
+  let input = game.botInput();
+  if (t > 18.75 && !crashed && game.player.alive) {
+    // Absichtlicher Crash für den Trailer: knapp an die Kante steuern
+    const next = game.gates.filter(g => !g.passed && g.y < NeonGate.PLAYER_Y).sort((a, b) => b.y - a.y)[0];
+    if (next) input = { targetX: next.gapX + next.gapW / 2 + 4 };
+  }
+  game.update(dt, input);
+  if (!game.player.alive && !crashed) { crashed = true; window.crashTime = t; }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  game.render(ctx, SCALE);
+  ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+
+  if (t > 13 && game.player.alive) speedLines(t, ease((t - 13) / 1.5));
+
+  // HUD
+  if (t > 2.6 && t < 21) { game.renderHUD(ctx, SCALE); ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0); }
+
+  // Intro
+  if (t < 3.2) {
+    const fade = 1 - ease((t - 2.2) / 1.0);
+    ctx.fillStyle = `rgba(3,4,10,${0.78 * fade})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.globalAlpha = fade;
+    drawLogo(W / 2, H / 2 - 90, (t - 0.25) / 1.2, t);
+    glowText('EIN NEON-ARCADE-SPIEL', W / 2, H / 2 + 80, 24, '#bfefff', '#29e3ff', ease((t - 1.2) / 0.6), 5);
+    ctx.restore();
+    if (t < 0.4) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.4})`; ctx.fillRect(0, 0, W, H); }
+  }
+
+  for (const c of CAPTIONS) if (t >= c.a && t <= c.b) drawCaption(c, t);
+
+  // Endkarte
+  if (t > 20.6) {
+    const k = ease((t - 20.6) / 0.8);
+    ctx.fillStyle = `rgba(3,4,10,${0.82 * k})`;
+    ctx.fillRect(0, 0, W, H);
+    drawLogo(W / 2, H / 2 - 160, (t - 20.9) / 1.0, t);
+    const k2 = ease((t - 21.7) / 0.5);
+    // Button
+    const bw = 330, bh = 84, bx = W / 2 - bw / 2, by = H / 2 + 20;
+    const pulse = 1 + Math.sin((t - 21.7) * 6) * 0.03 * k2;
+    ctx.save();
+    ctx.globalAlpha = k2;
+    ctx.translate(W / 2, by + bh / 2); ctx.scale(pulse, pulse); ctx.translate(-W / 2, -(by + bh / 2));
+    ctx.shadowColor = '#29e3ff'; ctx.shadowBlur = 36;
+    ctx.strokeStyle = '#29e3ff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 42); ctx.stroke();
+    ctx.fillStyle = 'rgba(41,227,255,0.14)'; ctx.fill();
+    ctx.restore();
+    glowText('JETZT SPIELEN', W / 2, by + bh / 2 + 2, 34, '#ffffff', '#29e3ff', k2, 4);
+    glowText('← →  ODER  TIPPEN', W / 2, by + bh + 70, 22, '#bfefff', '#d14dff', ease((t - 22.2) / 0.5), 4);
+    if (t > 23.4) { ctx.fillStyle = `rgba(0,0,0,${ease((t - 23.4) / 0.6)})`; ctx.fillRect(0, 0, W, H); }
+  }
+
+  // Vignette
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  return { t, alive: game.player.alive, score: game.score, combo: game.combo };
+};
+window.TOTAL_FRAMES = FPS * DURATION;
+</script>
+</body>
+</html>
